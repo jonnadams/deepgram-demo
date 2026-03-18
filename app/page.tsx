@@ -1,65 +1,179 @@
-import Image from "next/image";
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Recorder from "@/components/Recorder";
+import TranscriptPanel from "@/components/TranscriptPanel";
+import InsightsPanel from "@/components/InsightsPanel";
+import SearchPanel from "@/components/SearchPanel";
+import type {
+  Insights,
+  SentimentLabel,
+} from "@/types/insights";
+import type {
+  TranscriptSegment,
+  TranscriptSession,
+} from "@/types/transcript";
+import { requestInsights } from "@/services/insights.client";
+
+type ConnectionStatus = "idle" | "connecting" | "live" | "error";
 
 export default function Home() {
+  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [status, setStatus] = useState<ConnectionStatus>("idle");
+  const [insights, setInsights] = useState<Insights>({
+    topics: [],
+    sentiment: "neutral",
+    actionItems: [],
+    lastUpdatedAt: null,
+  });
+  const [sessions, setSessions] = useState<TranscriptSession[]>([]);
+
+  const fullTranscript = useMemo(
+    () => segments.map((s) => s.text).join(" "),
+    [segments],
+  );
+
+  useEffect(() => {
+    if (!fullTranscript.trim()) return;
+
+    let cancelled = false;
+
+    const handle = setTimeout(async () => {
+      try {
+        const next = await requestInsights(fullTranscript);
+        if (!cancelled) setInsights(next);
+      } catch {
+        // Keep existing insights on transient errors.
+      }
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [fullTranscript]);
+
+  const handleSegment = useCallback((segment: TranscriptSegment) => {
+    setSegments((prev) => {
+      const existingIndex = prev.findIndex((s) => s.id === segment.id);
+      if (existingIndex !== -1) {
+        const copy = [...prev];
+        copy[existingIndex] = segment;
+        return copy;
+      }
+      return [...prev, segment];
+    });
+  }, []);
+
+  const handleRecordingStop = useCallback(() => {
+    if (!segments.length) return;
+    const text = segments.map((s) => s.text).join(" ").trim();
+    if (!text) return;
+
+    const session: TranscriptSession = {
+      id: `${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      text,
+      segments,
+      dominantSentiment: insights.sentiment as SentimentLabel,
+      topics: insights.topics,
+    };
+    setSessions((prev) => [session, ...prev]);
+  }, [segments, insights]);
+
+  const handleResetCurrent = useCallback(() => {
+    setSegments([]);
+    setInsights({
+      topics: [],
+      sentiment: "neutral",
+      actionItems: [],
+      lastUpdatedAt: null,
+    });
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="flex min-h-screen flex-col px-4 py-6 text-slate-100 md:px-8 lg:px-12">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6">
+        <header className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/20 ring-1 ring-sky-400/40">
+              <span className="text-lg font-semibold tracking-tight text-sky-100">
+                VI
+              </span>
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight text-slate-50 md:text-2xl">
+                Voice Intelligence
+              </h1>
+              <p className="text-xs text-slate-400 md:text-sm">
+                Real-time transcription and AI-powered insights.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-1.5 text-xs shadow-lg shadow-black/30">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  status === "live"
+                    ? "bg-emerald-400 shadow-[0_0_0_4px] shadow-emerald-400/40"
+                    : status === "connecting"
+                      ? "bg-amber-400"
+                      : status === "error"
+                        ? "bg-rose-500"
+                        : "bg-slate-500"
+                }`}
+              />
+              <span className="font-medium uppercase tracking-wide text-slate-200">
+                {status === "live"
+                  ? "Live"
+                  : status === "connecting"
+                    ? "Connecting"
+                    : status === "error"
+                      ? "Error"
+                      : "Idle"}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        <section className="grid flex-1 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
+          <TranscriptPanel
+            segments={segments}
+            status={status}
+          />
+          <div className="flex flex-col gap-6">
+            <InsightsPanel insights={insights} />
+            <SearchPanel sessions={sessions} />
+          </div>
+        </section>
+
+        <section className="mt-2 flex flex-col items-center justify-between gap-4 rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-900/50 via-slate-950 to-emerald-900/40 px-4 py-3 shadow-[0_-16px_60px_rgba(15,23,42,0.9)] md:flex-row md:px-6 lg:px-8">
+          <div className="flex items-center gap-3 text-xs text-slate-300 md:text-sm">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900/80 ring-1 ring-sky-500/40">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-950">
+                <div className="flex h-3 w-3 items-center justify-center rounded-full bg-emerald-400" />
+              </div>
+            </div>
+            <div>
+              <p className="font-medium text-slate-100">
+                Speak naturally.
+              </p>
+              <p className="text-[11px] text-slate-400 md:text-xs">
+                We stream audio to Deepgram&apos;s nova-2 model for low-latency
+                transcription.
+              </p>
+            </div>
+          </div>
+
+          <Recorder
+            onSegment={handleSegment}
+            onStatusChange={setStatus}
+            onStop={handleRecordingStop}
+            onResetCurrent={handleResetCurrent}
+          />
+        </section>
+      </div>
+    </main>
   );
 }
