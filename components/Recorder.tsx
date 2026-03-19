@@ -24,6 +24,8 @@ export default function Recorder({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const speakerRef = useRef<"Agent" | "Customer">("Agent");
+  const didStopRef = useRef(false);
+  const onStopRef = useRef(onStop);
 
   const updateStatus = useCallback(
     (next: ConnectionStatus) => {
@@ -32,6 +34,10 @@ export default function Recorder({
     },
     [onStatusChange],
   );
+
+  useEffect(() => {
+    onStopRef.current = onStop;
+  }, [onStop]);
 
   useEffect(() => {
     return () => {
@@ -99,15 +105,16 @@ export default function Recorder({
         mediaRecorderRef.current?.stop();
         mediaRecorderRef.current = null;
         updateStatus("idle");
-        onStop?.();
+        if (!didStopRef.current) onStopRef.current?.();
       };
     },
-    [onResetCurrent, onSegment, onStop, updateStatus],
+    [onResetCurrent, onSegment, updateStatus],
   );
 
   const startRecording = useCallback(async () => {
     if (isRecording) return;
     try {
+      didStopRef.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -123,9 +130,11 @@ export default function Recorder({
 
   const stopRecording = useCallback(() => {
     if (!isRecording) return;
+    didStopRef.current = true;
     setIsRecording(false);
     mediaRecorderRef.current?.stop();
     socketRef.current?.close();
+    onStopRef.current?.();
   }, [isRecording]);
 
   const label = isRecording

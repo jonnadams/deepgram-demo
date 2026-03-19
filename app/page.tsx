@@ -19,7 +19,12 @@ import { loadSessions, saveSessions } from "@/lib/sessions-storage";
 type ConnectionStatus = "idle" | "connecting" | "live" | "error";
 
 export default function Home() {
-  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  const [finalSegments, setFinalSegments] = useState<TranscriptSegment[]>(
+    [],
+  );
+  const [interimSegment, setInterimSegment] = useState<
+    TranscriptSegment | null
+  >(null);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [insights, setInsights] = useState<Insights>({
     topics: [],
@@ -29,6 +34,13 @@ export default function Home() {
   });
   const [sessions, setSessions] = useState<TranscriptSession[]>([]);
   const hasLoadedSessions = useRef(false);
+
+  // Always render final transcript, and render interim only while recording is active.
+  const segmentsForUI = useMemo(() => {
+    if (status !== "live" && status !== "connecting") return finalSegments;
+    if (!interimSegment) return finalSegments;
+    return [...finalSegments, interimSegment];
+  }, [finalSegments, interimSegment, status]);
 
   // Load persisted sessions from localStorage on mount (deferred to avoid sync setState in effect)
   useEffect(() => {
@@ -44,10 +56,18 @@ export default function Home() {
     if (hasLoadedSessions.current) saveSessions(sessions);
   }, [sessions]);
 
-  const fullTranscript = useMemo(
-    () => segments.map((s) => s.text).join(" "),
-    [segments],
-  );
+  const fullTranscript = useMemo(() => {
+    // Interim vs final separation avoids duplication:
+    // - interim updates replace the same temporary segment in place
+    // - final updates append only once to finalSegments
+    const source =
+      status === "live" || status === "connecting"
+        ? interimSegment
+          ? [...finalSegments, interimSegment]
+          : finalSegments
+        : finalSegments;
+    return source.map((s) => s.text).join(" ").trim();
+  }, [finalSegments, interimSegment, status]);
 
   useEffect(() => {
     if (!fullTranscript.trim()) return;
@@ -70,36 +90,50 @@ export default function Home() {
   }, [fullTranscript]);
 
   const handleSegment = useCallback((segment: TranscriptSegment) => {
-    setSegments((prev) => {
-      const existingIndex = prev.findIndex((s) => s.id === segment.id);
-      if (existingIndex !== -1) {
-        const copy = [...prev];
-        copy[existingIndex] = segment;
-        return copy;
-      }
-      return [...prev, segment];
-    });
+    // Interim vs final separation is necessary because Deepgram streams
+    // partial text repeatedly while the user speaks.
+    if (segment.isFinal) {
+      setInterimSegment(null);
+      setFinalSegments((prev) => {
+        const last = prev[prev.length - 1];
+        // Prevent duplicate finals when Deepgram repeats identical final text.
+        if (
+          last &&
+          last.speaker === segment.speaker &&
+          last.text.trim() === segment.text.trim()
+        ) {
+          return prev;
+        }
+        return [...prev, segment];
+      });
+    } else {
+      // Replace interim in place (do not append) to avoid repeated phrases.
+      setInterimSegment(segment);
+    }
   }, []);
 
   const handleRecordingStop = useCallback(() => {
-    if (!segments.length) return;
-    const text = segments.map((s) => s.text).join(" ").trim();
+    // Interim should not be persisted. Persist only finalized segments.
+    setInterimSegment(null);
+    if (!finalSegments.length) return;
+    const text = finalSegments.map((s) => s.text).join(" ").trim();
     if (!text) return;
 
     const session: TranscriptSession = {
       id: `${Date.now()}`,
       createdAt: new Date().toISOString(),
       text,
-      segments,
+      segments: finalSegments,
       dominantSentiment: insights.sentiment as SentimentLabel,
       topics: insights.topics,
       actionItems: insights.actionItems,
     };
     setSessions((prev) => [session, ...prev]);
-  }, [segments, insights]);
+  }, [finalSegments, insights]);
 
   const handleResetCurrent = useCallback(() => {
-    setSegments([]);
+    setFinalSegments([]);
+    setInterimSegment(null);
     setInsights({
       topics: [],
       sentiment: "neutral",
@@ -156,7 +190,7 @@ export default function Home() {
 
         <section className="grid flex-1 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
           <TranscriptPanel
-            segments={segments}
+            segments={segmentsForUI}
             status={status}
           />
           <div className="flex flex-col gap-6">
@@ -177,7 +211,7 @@ export default function Home() {
                 Speak naturally.
               </p>
               <p className="text-[11px] text-slate-400 md:text-xs">
-                We stream audio to Deepgram&apos;s nova-2 model for low-latency
+                We stream audio to Deepgram&apos;s nova-3 model for low-latency
                 transcription.
               </p>
             </div>
