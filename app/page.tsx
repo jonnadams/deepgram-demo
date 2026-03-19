@@ -112,21 +112,35 @@ export default function Home() {
     }
   }, []);
 
-  const handleRecordingStop = useCallback(() => {
+  const handleRecordingStop = useCallback(async () => {
     // Interim should not be persisted. Persist only finalized segments.
     setInterimSegment(null);
     if (!finalSegments.length) return;
+
     const text = finalSegments.map((s) => s.text).join(" ").trim();
     if (!text) return;
+
+    // The UI updates insights via a debounce on `fullTranscript`.
+    // When the user hits stop quickly, `insights` may still be stale.
+    // Persist insights computed from the final transcript text instead.
+    let nextInsights: Insights;
+    try {
+      nextInsights = await requestInsights(text);
+    } catch {
+      nextInsights = insights;
+    }
+
+    // Keep the visible panel in sync with what we persist.
+    setInsights(nextInsights);
 
     const session: TranscriptSession = {
       id: `${Date.now()}`,
       createdAt: new Date().toISOString(),
       text,
       segments: finalSegments,
-      dominantSentiment: insights.sentiment as SentimentLabel,
-      topics: insights.topics,
-      actionItems: insights.actionItems,
+      dominantSentiment: nextInsights.sentiment as SentimentLabel,
+      topics: nextInsights.topics,
+      actionItems: nextInsights.actionItems,
     };
     setSessions((prev) => [session, ...prev]);
   }, [finalSegments, insights]);
