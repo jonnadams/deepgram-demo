@@ -15,5 +15,6 @@ export interface TranscriptSession {
   segments: TranscriptSegment[];
   dominantSentiment: "positive" | "neutral" | "negative";
   topics: string[];
+  actionItems: string[];
 }
 

@@ -13,7 +13,7 @@ export async function GET() {
   return NextResponse.json({
     apiKey,
     websocketUrl:
-      "wss://api.deepgram.com/v1/listen?model=nova-3&punctuate=true&interim_results=true",
+      "wss://api.deepgram.com/v1/listen?model=nova-3&punctuate=true&interim_results=true&eot_threshold=0.7&eot_timeout_ms=5000",
   });
 }
 

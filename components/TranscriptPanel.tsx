@@ -6,6 +6,9 @@ type ConnectionStatus = "idle" | "connecting" | "live" | "error";
 interface TranscriptPanelProps {
   segments: TranscriptSegment[];
   status: ConnectionStatus;
+  mode?: "live" | "history";
+  headerSubtitle?: string;
+  modelLabel?: string;
 }
 
 function formatTime(timestampSeconds: number): string {
@@ -20,6 +23,9 @@ function formatTime(timestampSeconds: number): string {
 export default function TranscriptPanel({
   segments,
   status,
+  mode = "live",
+  headerSubtitle,
+  modelLabel = "nova-3",
 }: TranscriptPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -34,17 +40,20 @@ export default function TranscriptPanel({
       <header className="mb-3 flex items-center justify-between gap-3 md:mb-4">
         <div>
           <h2 className="text-sm font-semibold tracking-tight text-slate-50 md:text-base">
-            Live Transcript
+            {mode === "live" ? "Live Transcript" : "Conversation History"}
           </h2>
           <p className="text-[11px] text-slate-400 md:text-xs">
-            {status === "live"
-              ? "Streaming from your microphone in real time."
-              : "Click Start Recording to begin streaming audio."}
+            {headerSubtitle ??
+              (mode === "live"
+                ? status === "live"
+                  ? "Streaming from your microphone in real time."
+                  : "Click Start Recording to begin streaming audio."
+                : "Transcript for the selected recording.")}
           </p>
         </div>
         <div className="inline-flex items-center gap-1 rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] text-slate-300 ring-1 ring-white/10">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          <span>nova-3</span>
+          <span>{modelLabel}</span>
         </div>
       </header>
 

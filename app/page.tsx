@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Recorder from "@/components/Recorder";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import InsightsPanel from "@/components/InsightsPanel";
@@ -14,6 +14,7 @@ import type {
   TranscriptSession,
 } from "@/types/transcript";
 import { requestInsights } from "@/services/insights.client";
+import { loadSessions, saveSessions } from "@/lib/sessions-storage";
 
 type ConnectionStatus = "idle" | "connecting" | "live" | "error";
 
@@ -27,6 +28,21 @@ export default function Home() {
     lastUpdatedAt: null,
   });
   const [sessions, setSessions] = useState<TranscriptSession[]>([]);
+  const hasLoadedSessions = useRef(false);
+
+  // Load persisted sessions from localStorage on mount (deferred to avoid sync setState in effect)
+  useEffect(() => {
+    const loaded = loadSessions();
+    queueMicrotask(() => {
+      setSessions(loaded);
+      hasLoadedSessions.current = true;
+    });
+  }, []);
+
+  // Persist sessions to localStorage whenever they change (after initial load)
+  useEffect(() => {
+    if (hasLoadedSessions.current) saveSessions(sessions);
+  }, [sessions]);
 
   const fullTranscript = useMemo(
     () => segments.map((s) => s.text).join(" "),
@@ -77,6 +93,7 @@ export default function Home() {
       segments,
       dominantSentiment: insights.sentiment as SentimentLabel,
       topics: insights.topics,
+      actionItems: insights.actionItems,
     };
     setSessions((prev) => [session, ...prev]);
   }, [segments, insights]);
@@ -148,7 +165,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mt-2 flex flex-col items-center justify-between gap-4 rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-900/50 via-slate-950 to-emerald-900/40 px-4 py-3 shadow-[0_-16px_60px_rgba(15,23,42,0.9)] md:flex-row md:px-6 lg:px-8">
+        <section className="mt-2 flex flex-col items-center justify-between gap-4 rounded-2xl border border-sky-500/20 bg-linear-to-r from-sky-900/50 via-slate-950 to-emerald-900/40 px-4 py-3 shadow-[0_-16px_60px_rgba(15,23,42,0.9)] md:flex-row md:px-6 lg:px-8">
           <div className="flex items-center gap-3 text-xs text-slate-300 md:text-sm">
             <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900/80 ring-1 ring-sky-500/40">
               <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-950">
